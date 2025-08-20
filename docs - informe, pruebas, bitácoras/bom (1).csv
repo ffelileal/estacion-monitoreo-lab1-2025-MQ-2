@@ -1,0 +1,10 @@
+﻿Nombre,Cantidad,Componente
+"Upotenciador",1," Arduino Uno R3"
+"U1",1," Sensor de temperatura [TMP36]"
+"U2",1,"Basado en PCF8574, 33 (0x21) LCD 16 x 2 (I2C)"
+"D1",1,"Rojo LED"
+"R1",1,"220 Ω Resistencia"
+"R2",1," Fotorresistencia"
+"R3, R4",2,"10 kΩ Resistencia"
+"GAS1",1," Sensor de gas"
+"S1",1," Pulsador"
