@@ -18,5 +18,3 @@ Este proyecto consiste en un sistema integrado de monitoreo y registro de variab
 ## Alimentación
 
 * Fuente de alimentación externa, adecuada para asegurar estabilidad en todos los módulos conectados.
-
-Si quieres, puedo hacer también una **versión más corta y atractiva** para que se vea bien en GitHub, tipo “README resumido” que enganche al lector rápidamente. ¿Querés que haga eso también?
