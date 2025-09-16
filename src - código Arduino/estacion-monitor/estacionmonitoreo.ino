@@ -4,16 +4,26 @@
 #include <SD.h>
 #include <SPI.h>
 
+#define REF_RESISTANCE 6050       // measure this for best results
+#define LUX_CALC_SCALAR 12518931  // from experiment
+#define LUX_CALC_EXPONENT -1.405  // from experiment
+//LUX 196
 //Pines
-int pinDHT = 9;
+byte pinDHT = 9;
 int pinLDR = A0;
+int pinHumo = A1;
 
 //Variables
 int lecturaDHT = 0;
-int lecturaLDR = 0;
+int lecturaLdr = 0;
+int lecturaHumo = 0;
 float temp = 0.0;
 float hum = 0.0;
-int menu = 0;
+float voltajeResistencia = 0.0;
+float voltajeLdr = 0.0;
+float resistenciaLdr = 0.0;
+float lux = 0.0;
+byte menu = 0;
 
 String fecha = "";
 String dia = "";
@@ -23,7 +33,8 @@ String hora = "";
 String minutos = "";
 String segundos = "";
 
-virtuabotixRTC myRTC(6, 7, 8);
+//SD modulo CS-10 SCK-13 MOSI-11 MISO-12
+virtuabotixRTC myRTC(6, 7, 8);  // SCk-DAT-RST
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 dht DHT;
 File myFile;
@@ -31,6 +42,7 @@ File myFile;
 void setup() {
   Serial.begin(9600);
   pinMode(pinLDR, INPUT);
+  pinMode(pinHumo, INPUT);
   lcd.init();
   lcd.backlight();
 
@@ -43,22 +55,29 @@ void setup() {
   }
   Serial.println("Inicializacion OK");
 
-  //myRTC.setDS1302Time(00, 48, 17, 3, 3, 9, 2025);
+  // myRTC.setDS1302Time(00, 48, 17, 3, 3, 9, 2025);
 
-    /*myRTC.setDS1302Time(
-    (__TIME__[6]-'0')*10 + (__TIME__[7]-'0'),    // segundos
-    (__TIME__[3]-'0')*10 + (__TIME__[4]-'0'),    // minutos
-    (__TIME__[0]-'0')*10 + (__TIME__[1]-'0'),    // horas
-    3,                                           // día de la semana (lo podés calcular)
-    (__DATE__[4]==' ' ? __DATE__[5]-'0' : (__DATE__[4]-'0')*10+(__DATE__[5]-'0')), // día
-    __DATE__,                        // mes a número
-    atoi(__DATE__+7)                             // año
-  );*/
+  // myRTC.setDS1302Time(
+  //   (__TIME__[6]-'0')*10 + (__TIME__[7]-'0'),    // segundos
+  //   (__TIME__[3]-'0')*10 + (__TIME__[4]-'0'),    // minutos
+  //   (__TIME__[0]-'0')*10 + (__TIME__[1]-'0'),    // horas
+  //   3,                                           // día de la semana (lo podés calcular)
+  //   (__DATE__[4]==' ' ? __DATE__[5]-'0' : (__DATE__[4]-'0')*10+(__DATE__[5]-'0')), // día
+  //   __DATE__,                        // mes a número
+  //   atoi(__DATE__+7)                             // año
+  // );
 }
 
 void loop() {
   lecturaDHT = DHT.read11(pinDHT);
-  lecturaLDR = analogRead(pinLDR);
+  lecturaLdr = analogRead(pinLDR);
+  lecturaHumo = analogRead(pinHumo);
+
+  voltajeResistencia = (float)lecturaLdr / 1023 * 5.0;
+  voltajeLdr = 5.0 - voltajeResistencia;
+  resistenciaLdr = voltajeLdr / voltajeResistencia * REF_RESISTANCE;
+  lux = LUX_CALC_SCALAR * pow(resistenciaLdr, LUX_CALC_EXPONENT);
+
   temp = DHT.temperature - 2.56;
   hum = DHT.humidity;
   myRTC.updateTime();
@@ -70,15 +89,15 @@ void loop() {
   minutos = String(myRTC.minutes);
   segundos = String(myRTC.seconds);
 
+  year = year.substring(2);
+
   segundos = convertirEntero(segundos);
   minutos = convertirEntero(minutos);
   hora = convertirEntero(hora);
   mes = convertirEntero(mes);
   dia = convertirEntero(dia);
 
-  fecha = dia + "-" + mes + "-" + ".csv";//Sacar los 2 primeros caracteres del anio 2025 -> 25
-  Serial.println(fecha);
-  // myFile = SD.open("f.csv", FILE_WRITE);
+  fecha = dia + "-" + mes + "-" + year + ".csv";
   myFile = SD.open(fecha, FILE_WRITE);
   if (myFile) {
     myFile.print(temp);
@@ -86,6 +105,10 @@ void loop() {
     myFile.print(";");
     myFile.print(hum);
     myFile.print("%");
+    myFile.print(";");
+    myFile.print(lux);
+    myFile.print(";");
+    myFile.print(lecturaHumo);
     myFile.print(";");
     myFile.print(dia);
     myFile.print("/");
@@ -106,23 +129,23 @@ void loop() {
   myFile.close();
 
   //Monitor Serial
-  Serial.print("Fecha: ");
-  Serial.print(dia);
-  Serial.print("/");
-  Serial.print(mes);
-  Serial.print("/");
-  Serial.println(year);
-  Serial.print("Hora: ");
-  Serial.print(hora);
-  Serial.print(":");
-  Serial.println(minutos);
+  // Serial.print("Fecha: ");
+  // Serial.print(dia);
+  // Serial.print("/");
+  // Serial.print(mes);
+  // Serial.print("/");
+  // Serial.println(year);
+  // Serial.print("Hora: ");
+  // Serial.print(hora);
+  // Serial.print(":");
+  // Serial.println(minutos);
 
-  Serial.print("Temperatura= ");
-  Serial.print(temp);
-  Serial.println("°C");
-  Serial.print("Humedad = ");
-  Serial.print(hum);
-  Serial.println("%");
+  // Serial.print("Temperatura= ");
+  // Serial.print(temp);
+  // Serial.println("°C");
+  // Serial.print("Humedad = ");
+  // Serial.print(hum);
+  // Serial.println("%");
 
   //LCD 16x2
   switch (menu) {
@@ -151,11 +174,20 @@ void loop() {
       lcd.print(hum);
       lcd.setCursor(0, 1);
       lcd.print("LDR:");
-      lcd.print(lecturaLDR);
+      lcd.print(lux);
+      lcd.print(" LUX");
+      break;
+    case 2:
+      lcd.home();
+      lcd.clear();
+      lcd.print("GasCombus-Humo:");
+      lcd.setCursor(0,1);
+      lcd.print(lecturaHumo);
+      break;
     default:
       break;
   }
-  if (menu >= 1) {
+  if (menu >= 2) {
     menu = 0;
   } else {
     menu++;
@@ -163,13 +195,9 @@ void loop() {
   delay(2000);
 }
 
-String convertirEntero(String variable){
-  if (variable.length() == 1){
+String convertirEntero(String variable) {
+  if (variable.length() == 1) {
     variable = "0" + variable;
   }
   return variable;
-}
-
-void extensionArchivo(String d, String m, String y){
-  
 }
