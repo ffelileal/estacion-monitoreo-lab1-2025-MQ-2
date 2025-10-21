@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:estacion_meteorologica/providers/lecturas_provider.dart';
 import 'package:estacion_meteorologica/widgets/sensor_card.dart';
 import 'package:estacion_meteorologica/services/bluetooth_service.dart';
+import 'package:estacion_meteorologica/services/bluetooth_platform.dart' as btplat;
 import 'package:intl/intl.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -129,8 +130,9 @@ class DashboardScreen extends StatelessWidget {
                           onPressed: connState == ConnectionStateBT.connected || connState == ConnectionStateBT.connecting
                               ? null
                               : () async {
-                                  final id = await _askDeviceId(context);
-                                  if (id != null) {
+                                  String? id = await _pickPairedDevice(context);
+                                  id ??= await _askDeviceId(context);
+                                  if (id != null && id.isNotEmpty) {
                                     try {
                                       await prov.connect(id);
                                     } catch (e) {
@@ -194,6 +196,32 @@ class DashboardScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<String?> _pickPairedDevice(BuildContext context) async {
+    try {
+      final devices = await btplat.getBondedDevices();
+      if (devices.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No hay dispositivos emparejados')));
+        return null;
+      }
+
+      return showDialog<String>(
+        context: context,
+        builder: (_) => SimpleDialog(
+          title: const Text('Dispositivos emparejados'),
+          children: devices
+              .map((d) => SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, d.address),
+                    child: Text('${d.name ?? 'Desconocido'} (${d.address})'),
+                  ))
+              .toList(),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error listando dispositivos: $e')));
+      return null;
+    }
   }
 }
 

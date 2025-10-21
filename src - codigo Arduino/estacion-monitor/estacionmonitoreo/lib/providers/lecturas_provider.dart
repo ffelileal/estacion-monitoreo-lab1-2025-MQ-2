@@ -13,7 +13,7 @@ class LecturasProvider extends ChangeNotifier {
 
   StreamSubscription<String>? _sub;
   StreamSubscription<ConnectionStateBT>? _stateSub;
-  ConnectionStateBT get connectionState => bt.state;
+  ConnectionStateBT get connectionState => bt.connectionState;
 
   LecturasProvider() {
     // Listen to incoming lines and try to parse
@@ -67,7 +67,7 @@ class LecturasProvider extends ChangeNotifier {
 
   Future<void> connect(String deviceId) async {
     try {
-      await bt.connectToDevice(deviceId);
+      await bt.connect(deviceId);
       notifyListeners();
     } catch (e) {
       // propagate as error state if needed

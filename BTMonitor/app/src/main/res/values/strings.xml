@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BTMonitor</string>
+    <string name="connect">Conectar</string>
+    <string name="disconnect">Desconectar</string>
+    <string name="status_disconnected">Desconectado</string>
+    <string name="status_connecting">Conectando…</string>
+    <string name="status_connected">Conectado a %s</string>
+    <string name="temperature">Temperatura</string>
+    <string name="humidity">Humedad</string>
+    <string name="light">Luminosidad</string>
+    <string name="air_quality">Calidad del Aire</string>
+    <string name="temperature_icon">Ícono de temperatura</string>
+    <string name="humidity_icon">Ícono de humedad</string>
+    <string name="light_icon">Ícono de luz</string>
+    <string name="air_quality_icon">Ícono de calidad del aire</string>
+    <string name="error_bluetooth_not_supported">Bluetooth no está soportado en este dispositivo</string>
+    <string name="error_bluetooth_disabled">Por favor, active el Bluetooth</string>
+    <string name="error_connection_failed">Error al conectar con el dispositivo</string>
+    <string name="error_connection_lost">Se perdió la conexión con el dispositivo</string>
+    <string name="select_device">Seleccione un dispositivo</string>
+    <string name="no_paired_devices">No hay dispositivos vinculados</string>
+</resources>
