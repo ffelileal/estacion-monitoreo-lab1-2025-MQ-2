@@ -22,6 +22,7 @@ class BluetoothService {
   String? lastDeviceId;
   BluetoothConnection? _connection;
   final _inputBuffer = <int>[];
+  StreamSubscription<Uint8List>? _inputSub;
 
   static const _prefsKey = 'last_bt_device';
 
@@ -41,16 +42,21 @@ class BluetoothService {
 
   Future<void> connectToDevice(String deviceId) async {
     // Request necessary permissions
-    final perms = await Permission.bluetooth.request();
-    final permsConnect = await Permission.bluetoothConnect.request();
-    final permsScan = await Permission.bluetoothScan.request();
-    final permLocation = await Permission.locationWhenInUse.request();
+    await Permission.bluetooth.request();
+    await Permission.bluetoothConnect.request();
+    await Permission.bluetoothScan.request();
+    await Permission.locationWhenInUse.request();
 
-    if (!perms.isGranted && !permsConnect.isGranted) {
+    // Check statuses
+    final status = await Permission.bluetooth.status;
+    final statusConnect = await Permission.bluetoothConnect.status;
+    if (!status.isGranted && !statusConnect.isGranted) {
       throw Exception('Permisos Bluetooth no concedidos');
     }
 
-    state = ConnectionStateBT.connecting;
+  if (state == ConnectionStateBT.connected) return;
+
+  state = ConnectionStateBT.connecting;
     _stateController.add(state);
 
     try {
@@ -61,15 +67,37 @@ class BluetoothService {
       state = ConnectionStateBT.connected;
       _stateController.add(state);
 
-      // Listen to incoming bytes
-      _connection!.input?.listen((Uint8List data) {
+      // Listen to incoming bytes and keep subscription to cancel later
+      _inputSub = _connection!.input?.listen((Uint8List data) {
         _handleIncomingData(data);
-      }, onDone: () {
-        // connection closed
+      });
+
+      // handle connection closure/errors
+      _inputSub?.onDone(() {
+        _inputSub = null;
+        try {
+          _connection?.finish();
+        } catch (_) {}
+        _connection = null;
+        state = ConnectionStateBT.disconnected;
+        _stateController.add(state);
+      });
+      _inputSub?.onError((_) {
+        _inputSub = null;
+        try {
+          _connection?.finish();
+        } catch (_) {}
+        _connection = null;
         state = ConnectionStateBT.disconnected;
         _stateController.add(state);
       });
     } catch (e) {
+      // Ensure partial connection is closed
+      try {
+        await _connection?.finish();
+      } catch (_) {}
+      _connection = null;
+      _inputSub = null;
       state = ConnectionStateBT.disconnected;
       _stateController.add(state);
       rethrow;
@@ -78,9 +106,15 @@ class BluetoothService {
 
   Future<void> disconnect() async {
     try {
+      await _inputSub?.cancel();
+    } catch (_) {}
+    _inputSub = null;
+
+    try {
       await _connection?.finish();
     } catch (_) {}
     _connection = null;
+
     state = ConnectionStateBT.disconnected;
     _stateController.add(state);
   }
@@ -108,6 +142,13 @@ class BluetoothService {
   }
 
   void dispose() {
+    try {
+      _inputSub?.cancel();
+    } catch (_) {}
+    try {
+      _connection?.finish();
+    } catch (_) {}
+
     _linesController.close();
     _stateController.close();
   }
