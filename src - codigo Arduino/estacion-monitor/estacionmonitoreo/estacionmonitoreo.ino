@@ -1,20 +1,13 @@
-#include <LiquidCrystal_I2C.h>
-#include <Wire.h>
-#include <RTClib.h>
-#include <dht.h>
-#include <SD.h>
-#include <SPI.h>
-#include <LowPower.h>
-//LDR sin luz 35k Ohm
-//LDR luz 500 Ohm
-//Consumo calculado aprox -> 330mA
-
-// #define REF_RESISTANCE 6050       // measure this for best results
-// #define REF_RESISTANCE 9960       // measure this for best results
-// #define LUX_CALC_SCALAR 12518931  // from experiment
-// #define LUX_CALC_EXPONENT -1.405  // from experiment
-// #define LUX_CALC_EXPONENT -1.360  //Probar
-//LUX 196
+//  PROYECTO: ESTACIÓN DE MONITOREO AMBIENTAL
+//  Grupo 4
+//  Integrantes: Arana Braian, Leal Felipe, Romero Ivan, Trujillo Juan
+#include <LiquidCrystal_I2C.h>  //Libreria display 11602 I2C
+#include <Wire.h>               //Complemento para I2C
+#include <RTClib.h>             //Libreria del reloj RTC
+#include <dht.h>                //Libreria del sensor DHT11
+#include <SD.h>                 //Libreria de la SD
+#include <SPI.h>                //Complemento de la libreria SD
+#include <LowPower.h>           //Libreria modo sleep
 
 //Constantes
 const int REF_RESISTANCE = 9960;
@@ -34,16 +27,16 @@ int ledOK = A3;
 byte pinInterrupcion = 3;
 
 //Variables
+byte estadoInterrupcion = 0;
+bool interrupcion = false;
 int lecturaDHT = 0;
 int lecturaLdr = 0;
 int lecturaHumo = 0;
 float luxPasado = 0;
 float temp = 0.0;
 float tempPasado = 0.0;
-
 float hum = 0.0;
 float humPasado = 0.0;
-
 float voltajeResistencia = 0.0;
 float voltajeLdr = 0.0;
 float resistenciaLdr = 0.0;
@@ -54,6 +47,7 @@ byte tendenciaLux;
 byte tendenciaTemp;
 byte tendenciaHum;
 
+//Cadenas
 String fecha = "";
 String dia = "";
 String mes = "";
@@ -62,6 +56,7 @@ String hora = "";
 String minutos = "";
 String segundos = "";
 
+//Fecha de tendencia
 byte flechaArriba[8] = {
   B00100,
   B01110,
@@ -95,21 +90,20 @@ byte flechaDerecha[8] = {
 
 //SD modulo CS-10 SCK-13 MOSI-11 MISO-12
 
-RTC_DS3231 rtc;
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-dht DHT;
-File myFile;
+RTC_DS3231 rtc;                      //Objeto para el reloj RTC
+LiquidCrystal_I2C lcd(0x27, 16, 2);  //Objeto para display LCD
+dht DHT;                             //Objeto para sensor DHT
+File myFile;                         //Objeto para archivo SD
 
 void setup() {
-  // RtcDateTime cdt = RtcDateTime(__DATE__, __TIME__);
+  // RtcDateTime cdt = RtcDateTime(__DATE__, __TIME__);//Funcion para calibrar hora
   // Rtc.SetDateTime(cdt);
-  Serial.begin(9600);
   pinMode(pinLDR, INPUT);
+  pinMode(pinDHT, INPUT);
+  pinMode(pinInterrupcion, INPUT);
   pinMode(pinHumo, INPUT);
   pinMode(ledError, OUTPUT);
-  pinMode(pinCorte, OUTPUT);
   pinMode(ledOK, OUTPUT);
-  attachInterrupt(digitalPinToInterrupt(pinInterrupcion), evento, RISING);
   rtc.begin();
   lcd.init();
   lcd.backlight();
@@ -119,27 +113,51 @@ void setup() {
   if (!SD.begin(10)) {
     Serial.println("Inicializacion Fallida!");
     digitalWrite(ledError, HIGH);
+    lcd.clear();
+    lcd.home();
+    lcd.print("SD ERROR");
     while (1)
       ;
   }
-  Serial.println("Inicializacion OK");
   digitalWrite(ledOK, HIGH);
-  lcd.createChar(0, flechaArriba);
+  lcd.createChar(0, flechaArriba);  //Se crea los caracteres para las flechas de tendencia
   lcd.createChar(1, flechaAbajo);
   lcd.createChar(2, flechaDerecha);
+  Serial.begin(9600);
 }
 
 void loop() {
 
-  digitalWrite(pinCorte, HIGH);
-  lecturaLuz();
-  lecturaTempHum();
-  ppm = obtenerPPM(obtenerRs());
+  Serial.flush();
+  lecturaLuz();  //Funcion lectura de luz
+  delay(100);
+  lecturaTempHum();  //Funcion lectura de temperatura y humedad
+  delay(100);
+  ppm = obtenerPPM(obtenerRs());  //Funcion que retorna el valor en ppm
+  delay(100);
 
-  obtenerFechaHora();
-  // imprimirSerial();
-  guardarSD(false);
+  obtenerFechaHora();     //Funcion para obtener la fecha y hora
+  guardarSD(false);       //Funcion para guardar los datos en la SD
+  imprimirSerial(false);  //Funcion para imprimir por HC05
+  delay(100);
 
+  for (int i = 0; i < 74; i++) {  //Ciclo donde el arduino se pone en sleep cada 8 seg durante 10min
+    mostrarDatosLCD();//Funcion que muestra los datos en el display
+    delay(100);
+    estadoInterrupcion = digitalRead(pinInterrupcion);
+    if (estadoInterrupcion == HIGH) {
+      interrupcion = true;
+    }
+    if (interrupcion == true) {
+      evento();
+      delay(100);
+      interrupcion = false;
+    }
+    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+  }
+}
+
+void mostrarDatosLCD() {
   //LCD 16x2
   switch (menu) {
     case 0:
@@ -167,17 +185,25 @@ void loop() {
       lcd.print("H:");
       lcd.print(hum, 0);
       lcd.write(tendenciaHum);
-      lcd.setCursor(0, 1);
-      lcd.print("LDR:");
-      lcd.print(lux);
-      lcd.print(" LUX ");
-      lcd.write(tendenciaLux);
+      if (lux < 0.0 || lux > 10000.0) {
+        lcd.setCursor(0, 1);
+        lcd.print("LDR:");
+        lcd.print("FR");
+        lecturaLuz();
+      } else {
+        lcd.setCursor(0, 1);
+        lcd.print("LDR:");
+        lcd.print(lux);
+        lcd.print(" LUX ");
+        lcd.write(tendenciaLux);
+      }
       break;
     case 2:
       lcd.home();
       lcd.clear();
       lcd.print("Humo ambiente:");
       lcd.setCursor(0, 1);
+      ppm = obtenerPPM(obtenerRs());
       if (ppm < 200) {
         lcd.print("Aire limpio");
       } else {
@@ -193,10 +219,6 @@ void loop() {
   } else {
     menu++;
   }
-  digitalWrite(pinCorte, LOW);
-  for (int i = 0; i < 16; i++) {
-    LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
-  }
 }
 
 String convertirEntero(String variable) {
@@ -206,7 +228,7 @@ String convertirEntero(String variable) {
   return variable;
 }
 
-void evento() {
+void evento() {  //Funcion evento que se ejecuta cuando hay una interrupcion
   delay(300);
   Serial.println("EVENTO");
   lecturaLuz();
@@ -214,12 +236,12 @@ void evento() {
   ppm = obtenerPPM(obtenerRs());
 
   obtenerFechaHora();
-  imprimirSerial();
+  imprimirSerial(true);
   guardarSD(true);
 }
 
 void obtenerFechaHora() {
-  DateTime fecha = rtc.now();
+  DateTime fecha = rtc.now();  //Se obtiene la cadena de la hora actual, y se empieza a separar para convertir en String
 
   dia = String(fecha.day());
   mes = String(fecha.month());
@@ -228,9 +250,9 @@ void obtenerFechaHora() {
   minutos = String(fecha.minute());
   segundos = String(fecha.second());
 
-  year = year.substring(2);
+  year = year.substring(2);  //Se elimina 2 caracteres del año
 
-  segundos = convertirEntero(segundos);
+  segundos = convertirEntero(segundos);  //Funcion para agregar un 0 a la fecha y hora
   minutos = convertirEntero(minutos);
   hora = convertirEntero(hora);
   mes = convertirEntero(mes);
@@ -238,8 +260,8 @@ void obtenerFechaHora() {
 }
 
 void guardarSD(bool e) {
-  fecha = dia + "-" + mes + "-" + year + ".csv";
-  if (SD.exists(fecha)) {
+  fecha = dia + "-" + mes + "-" + year + ".csv";  //Se crea archivo .csv con la fecha actual
+  if (SD.exists(fecha)) {                         //Si el archivo existe se abre, sino se crea el encabezado
     myFile = SD.open(fecha, FILE_WRITE);
   } else {
     myFile = SD.open(fecha, FILE_WRITE);
@@ -256,7 +278,7 @@ void guardarSD(bool e) {
     myFile.print("event");
     myFile.println(";");
   }
-  if (myFile) {
+  if (myFile) {  //Imprime todos las mediciones en la SD
     myFile.print(dia);
     myFile.print("/");
     myFile.print(mes);
@@ -276,7 +298,7 @@ void guardarSD(bool e) {
     myFile.print(lux);
     myFile.print(";");
     myFile.print(ppm);
-    if (e == true) {
+    if (e == true) {  //Se imprime para determinar el evento
       myFile.print(";");
       myFile.print("evento");
       myFile.println(";");
@@ -290,42 +312,58 @@ void guardarSD(bool e) {
   }
 }
 
-void imprimirSerial() {
-  Serial.print("Fecha: ");
+void imprimirSerial(bool e) {
   Serial.print(dia);
   Serial.print("/");
   Serial.print(mes);
   Serial.print("/");
-  Serial.println(year);
-  Serial.print("Hora: ");
+  Serial.print(year);
+  Serial.print(" ");
   Serial.print(hora);
   Serial.print(":");
-  Serial.println(minutos);
-
-  Serial.print("Temperatura= ");
+  Serial.print(minutos);
+  Serial.print(":");
+  Serial.print(segundos);
+  Serial.print(";");
   Serial.print(temp);
-  Serial.println("°C");
-  Serial.print("Humedad = ");
+  Serial.print(";");
   Serial.print(hum);
-  Serial.println("%");
+  Serial.print(";");
+  Serial.print(lux);
+  Serial.print(";");
+  Serial.print(ppm);
+  if (e == true) {
+    Serial.print(";");
+    Serial.print("evento");
+    Serial.println(";");
+  } else {
+    Serial.println(";");
+  }
 }
 
 void lecturaLuz() {
-  lecturaLdr = analogRead(pinLDR);
-  voltajeResistencia = (float)lecturaLdr / 1023 * 5.0;
-  voltajeLdr = 5.0 - voltajeResistencia;
-  resistenciaLdr = voltajeLdr / voltajeResistencia * REF_RESISTANCE;
+  lecturaLdr = analogRead(pinLDR);                                    //Lee el valor analogico
+  voltajeResistencia = (float)lecturaLdr / 1023.0 * 5.0;              //Se realiza calculo para obtener la tension
+  voltajeLdr = 5.0 - voltajeResistencia;                              //Se resta para obtner la caida de tesion del LDR
+  resistenciaLdr = voltajeLdr / voltajeResistencia * REF_RESISTANCE;  //Se obtiene la resistencia del LDR
 
-  lux = LUX_CALC_SCALAR * pow(resistenciaLdr, LUX_CALC_EXPONENT);
-  tendenciaLux = tendenciaParametros(luxPasado, lux);
+  lux = LUX_CALC_SCALAR * pow(resistenciaLdr, LUX_CALC_EXPONENT);  //Se realiza el calculo para obtener la medicion el lux
+  tendenciaLux = tendenciaParametros(luxPasado, lux);              //Funcion para mostrar la tendencia
   luxPasado = LUX_CALC_SCALAR * pow(resistenciaLdr, LUX_CALC_EXPONENT);
 }
 
 void lecturaTempHum() {
+  //Lectura del sensor
   lecturaDHT = DHT.read11(pinDHT);
-  temp = DHT.temperature - 2.56;
+
+  //Medicion de temperatura
+  temp = DHT.temperature - 2.5;  //Calculo aprox de la medicion de temperatura
+  if (temp < 0.00 || temp > 50.0) {
+    lecturaTempHum();
+  }
   tendenciaTemp = tendenciaParametros(tempPasado, temp);
-  tempPasado = DHT.temperature - 2.56;
+  tempPasado = DHT.temperature - 2.5;  //Calculo aprox de la medicion de temperatura
+  //Medicion de humedad
   hum = DHT.humidity;
   tendenciaHum = tendenciaParametros(humPasado, hum);
   humPasado = DHT.humidity;
@@ -333,19 +371,19 @@ void lecturaTempHum() {
 
 float obtenerRs() {
   lecturaHumo = analogRead(pinHumo);
-  float Vout = (float)lecturaHumo * (AlimentacionArduino / 1024.0);
+  float Vout = (float)lecturaHumo * (AlimentacionArduino / 1024.0);  //Se obtiene el voltaje del sensor
   return (RCarga * AlimentacionArduino / Vout) - RCarga;
 }
 
 float obtenerPPM(float RsRoratio) {
-  float logRsRo = log10(RsRoratio);
-  float ppm = pow(10, (logRsRo - 0.90) / (-0.421));
+  float logRsRo = log10(RsRoratio);                  //Se hace el log en base 10 del retorno de la funcion obtenerRS()
+  float ppm = pow(10, (logRsRo - 0.90) / (-0.421));  //Se realiza el calculo para obtener medicion en ppm
   // El MQ-2 no mide bien por debajo de 200 ppm, se considera aire limpio.
   return ppm;
 }
 
 byte tendenciaParametros(float pasado, float actual) {
-  if (pasado == actual) {
+  if (pasado == actual) {  //Compara el valor anterio y el actual para determinar la flecha de tendencia
     return byte(2);
   } else if (pasado < actual) {
     return byte(0);
